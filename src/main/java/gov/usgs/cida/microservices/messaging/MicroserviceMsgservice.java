@@ -135,30 +135,6 @@ public final class MicroserviceMsgservice implements Closeable, MessagingClient 
 		}
 	}
 	
-	public void bindConsumer(String queueName, MicroserviceHandler bindingHandler) {
-		try {
-			Channel bindingChannel = getChannel();
-			Map<String, Object> defaultBinding = new HashMap<>();
-			defaultBinding.put("x-match", "all");
-			defaultBinding.put("msrvServiceName", this.serviceName);
-			defaultBinding.put("msrvHandlerType", bindingHandler.getClass().getSimpleName());
-			//@thongsav
-			//defaultBinding might not always have a HandlerType (arg[2] for defaultBinding) might be causing the error.
-			//Would cause queueBind to potentially fail which means no consumers registered.
-			bindingChannel.queueBind(queueName, this.exchange, "", defaultBinding);
-			for (Map<String, Object> bindingOptions : bindingHandler.getBindings(serviceName)) {
-				bindingChannel.queueBind(queueName, this.exchange, "", bindingOptions);
-			}
-			bindingChannel.close();
-			Channel channel = getChannel();
-			Consumer consumer = new MicroserviceConsumer(channel, bindingHandler, this);
-			channel.basicConsume(queueName, true, consumer);
-			log.info("Channel {} now listening for {} messages", channel.getChannelNumber(), queueName);
-		} catch (Exception e) {
-			log.error("Could not register consumers", e);
-		}
-	}
-	
 	@Override
 	public void sendMessage(String requestId, String serviceRequestId, Map<String, Object> headers, byte[] message) {
 		Channel channel = null;
