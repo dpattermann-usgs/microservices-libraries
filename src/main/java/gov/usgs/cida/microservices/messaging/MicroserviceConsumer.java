@@ -52,7 +52,6 @@ public class MicroserviceConsumer extends DefaultConsumer  {
 		try {
 			this.handler.handle(requestId, serviceRequestId, params, body);
 
-			//TODO turn off autoack?
 			//For error handlers, we probably want autoack off so that there can be multiple error handlers
 //			channel.basicAck(deliveryTag, false);
 		} catch (Exception e) {
