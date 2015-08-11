@@ -61,17 +61,13 @@ public final class MicroserviceMsgservice implements Closeable, MessagingClient 
 		factory.setExceptionHandler(new MicroserviceExceptionHandler());
 
 		this.conFactory = factory;
-		log.debug("initialized ConnectionFactory");
 
 		Config config = new Config().withRecoveryPolicy(RecoveryPolicies.recoverAlways());
 		Connection connection = Connections.create(conFactory, config);
 		conn = connection;
 
 		this.serviceName = inServiceName;
-		log.info("THIS IS MY SERVICE NAME: " + this.serviceName);
-
 		this.microserviceHandlers = inHandlers;
-		log.info("I'VE GOT {} HANDLERS", this.microserviceHandlers.size());
 
 		for (Class<? extends MicroserviceHandler> clazz : inHandlers) {
 			String queueName = null;
@@ -88,18 +84,18 @@ public final class MicroserviceMsgservice implements Closeable, MessagingClient 
 			}
 		}
 
-		log.debug("instantiated msg service");
+		log.debug("Service initialized with name {} and {} handlers", this.serviceName, this.microserviceHandlers.size());
 	}
 
 	public Channel getChannel() throws IOException {
 		Channel channel = conn.createChannel();
-		log.trace("init Channel {} of {}", channel.getChannelNumber(), conn.getChannelMax());
+		log.trace("Init Channel {} of {} for service {}", channel.getChannelNumber(), conn.getChannelMax(), this.serviceName);
 		return channel;
 	}
 
 	@Override
 	public void close() throws IOException {
-		log.info("Cleaning Up Message Service");
+		log.debug("Service {} closing...", this.serviceName);
 		this.conn.close(3000);
 	}
 	
@@ -128,7 +124,8 @@ public final class MicroserviceMsgservice implements Closeable, MessagingClient 
 				Channel channel = getChannel();
 				Consumer consumer = new MicroserviceConsumer(channel, handler, this);
 				channel.basicConsume(queueName, true, consumer);
-				log.info("Channel {} now listening for {} messages, handled by {}", channel.getChannelNumber(), queueName, clazz.getSimpleName());
+				log.debug("Channel {} now listening for {} messages, handled by {} on service {}", 
+						channel.getChannelNumber(), queueName, clazz.getSimpleName(), this.serviceName);
 			}
 		} catch (Exception e) {
 			log.error("Could not register consumers", e);
@@ -149,11 +146,13 @@ public final class MicroserviceMsgservice implements Closeable, MessagingClient 
 			iffPut(modHeaders, "serviceRequestId", serviceRequestId);
 			iffPut(modHeaders, "msrvLoggable", Boolean.TRUE);
 			iffPut(modHeaders, "msrvPublishedBy", this.getServiceName());
-			log.trace("Sending message with Headers {}", new Gson().toJson(modHeaders, Map.class));
 			AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()
 				.headers(modHeaders)
 				.expiration("300000") //5 minute expiration time on all sent messages
 				.build();
+			
+			log.trace("Sending message with Headers {} through service {}", 
+					new Gson().toJson(modHeaders, Map.class), this.serviceName);
 			channel.basicPublish(exchange, "", props, message);
 		} catch (Exception e) {
 			log.error("Could not send message {}", message);
@@ -185,10 +184,13 @@ public final class MicroserviceMsgservice implements Closeable, MessagingClient 
 	 * @param serviceName
 	 * @param eventType
 	 */
-	public void declareQueueForType(String serviceName, String eventType) {
+	public void declareQueueForType(String serviceName, String eventType, int messageExpiry, int queueExpiry) {
 		try {
 			Channel channel = getChannel();
-			DeclareOk ack = channel.queueDeclare(serviceName, true, false, true, null);
+			Map<String, Object> queueOptions = new HashMap<>();
+			queueOptions.put("x-message-ttl", messageExpiry); //All queues defined here expire messages in 10 minutes
+			queueOptions.put("x-expires", queueExpiry); //All queues expire in 20 minutes
+			DeclareOk ack = channel.queueDeclare(serviceName, true, false, true, queueOptions);
 			ack.getQueue();
 
 			Map<String, Object> bindingOptions = new HashMap<>();
